@@ -27,7 +27,6 @@
   },
   "homepage": "https://github.com/mrstegeman/hap-controller-node#readme",
   "dependencies": {
-    "@abandonware/noble": "^1.9.2-12",
     "dnssd": "^0.4.1",
     "fast-srp-hap": "^2.0.3",
     "http-parser-js": "^0.5.3",
