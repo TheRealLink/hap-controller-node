@@ -219,10 +219,10 @@ export default class PairingProtocol {
    *
    * @returns {Promise} Promise which resolves to a Buffer.
    */
-  async buildPairSetupM1(): Promise<Buffer> {
+  async buildPairSetupM1(isSecure: boolean = true): Promise<Buffer> {
     const data = new Map();
     data.set(Types.kTLVType_State, Buffer.from([Steps.M1]));
-    data.set(Types.kTLVType_Method, Buffer.from([Methods.PairSetupWithAuth]));
+    data.set(Types.kTLVType_Method, Buffer.from([isSecure ? Methods.PairSetupWithAuth : Methods.PairSetup]));
     const packet = encodeObject(data);
     return packet;
   }
@@ -235,6 +235,7 @@ export default class PairingProtocol {
    */
   async parsePairSetupM2(m2Buffer: Buffer): Promise<TLV> {
     const tlv = decodeBuffer(m2Buffer);
+    console.log(tlv.toString());
 
     if (!tlv || tlv.size === 0) {
       throw new Error('M2: Empty TLV');

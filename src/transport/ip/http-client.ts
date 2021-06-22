@@ -7,6 +7,11 @@ import HttpConnection from './http-connection';
 import PairingProtocol, { PairingData, SessionKeys } from '../../protocol/pairing-protocol';
 import { TLV } from '../../model/tlv';
 
+export enum FeatureFlags {
+  SUPPORTS_APPLE_AUTHENTICATION_COPROCESSOR = 1,
+  SUPPORTS_SOFTWARE_AUTHENTICATION = 2
+}
+
 export interface GetCharacteristicsOptions {
   meta?: boolean;
   perms?: boolean;
@@ -21,6 +26,8 @@ export default class HttpClient extends EventEmitter {
 
   private port: number;
 
+  private isSecure = false;
+
   private pairingProtocol: PairingProtocol;
 
   private _pairingConnection?: HttpConnection;
@@ -33,11 +40,12 @@ export default class HttpClient extends EventEmitter {
    * @param {number} port - HTTP port
    * @param {Object?} pairingData - existing pairing data
    */
-  constructor(deviceId: string, address: string, port: number, pairingData?: PairingData) {
+  constructor(deviceId: string, address: string, port: number, isSecure = false, pairingData?: PairingData) {
     super();
     this.deviceId = deviceId;
     this.address = address;
     this.port = port;
+    this.isSecure = isSecure;
     this.pairingProtocol = new PairingProtocol(pairingData);
   }
 
@@ -78,7 +86,7 @@ export default class HttpClient extends EventEmitter {
     const connection = (this._pairingConnection = new HttpConnection(this.address, this.port));
 
     // M1
-    const m1 = await this.pairingProtocol.buildPairSetupM1();
+    const m1 = await this.pairingProtocol.buildPairSetupM1(this.isSecure);
     const m2 = await connection.post('/pair-setup', m1, 'application/pairing+tlv8');
 
     // M2

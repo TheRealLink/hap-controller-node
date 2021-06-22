@@ -2,7 +2,7 @@
  * Class for dealing with HAP TLV data.
  */
 
-const kTLVType_Separator = 255;
+// const kTLVType_Separator = 255;
 
 export type TLV = Map<number, Buffer>;
 
@@ -15,46 +15,24 @@ export type TLV = Map<number, Buffer>;
  * @returns {TLV} TLV object
  */
 export function decodeBuffer(buffer: Buffer): TLV {
-  let position = 0;
-  let lastTag = -1;
-  const result = new Map();
+  let pos = 0, ret: TLV = new Map<number, Buffer>();
+  while (buffer.length - pos > 0) {
+      let [ type, length ] = buffer.slice(pos);
 
-  if (!Buffer.isBuffer(buffer)) {
-    return result;
-  }
+      pos += 2;
 
-  while (position < buffer.length) {
-    const tag = buffer.readUInt8(position++);
-    const length = buffer.readUInt8(position++);
-    const value = buffer.slice(position, position + length);
-
-    if (result.has(tag)) {
-      const existingValue = result.get(tag);
-      if (Array.isArray(existingValue) && tag === lastTag) {
-        const idx = existingValue.length - 1;
-        const newValue = Buffer.allocUnsafe(existingValue[idx].length + length);
-        existingValue[idx].copy(newValue, 0);
-        value.copy(newValue, existingValue[idx].length);
-        existingValue[idx] = newValue;
-      } else if (Array.isArray(existingValue)) {
-        existingValue.push(value);
-      } else if (tag === lastTag) {
-        const newValue = Buffer.allocUnsafe(existingValue.length + length);
-        existingValue.copy(newValue, 0);
-        value.copy(newValue, existingValue.length);
-        result.set(tag, newValue);
+      let newData = buffer.slice(pos, pos + length);
+      
+      if (ret.has(type)) {
+          ret.set(type, Buffer.concat([ret.get(type) as Buffer, newData]))
       } else {
-        result.set(tag, [existingValue, value]);
+        ret.set(type, newData);
       }
-    } else {
-      result.set(tag, value);
-    }
 
-    position += length;
-    lastTag = tag;
+      pos += length;
   }
 
-  return result;
+  return ret;
 }
 
 /**
@@ -65,47 +43,24 @@ export function decodeBuffer(buffer: Buffer): TLV {
  * @param {TLV} obj - TLV object to encode
  * @returns {Buffer} Encoded buffer
  */
-export function encodeObject(obj: TLV): Buffer {
-  const tlvs = [];
+export function encodeObject(object: TLV): Buffer {
+    let encodedBuffer = Buffer.alloc(0);
 
-  // eslint-disable-next-line prefer-const
-  for (let [tag, value] of obj) {
-    if (tag < 0 || tag > 255) {
-      continue;
-    }
+    let type: number;
+    let data: Buffer;
+    for ([type, data] of object) {
+      let position: number = 0;
+      while (data.length - position > 0) {
+        let length = Math.min(data.length - position, 255);
 
-    if (tag === kTLVType_Separator) {
-      tlvs.push(Buffer.from([kTLVType_Separator, 0]));
-      continue;
-    }
+        encodedBuffer = Buffer.concat([
+            encodedBuffer, Buffer.from([type, length]),
+            data.slice(position, position + length)
+        ]);
 
-    let values;
-    if (Array.isArray(value)) {
-      values = value;
-    } else {
-      values = [value];
-    }
-
-    let valueIdx = 0;
-    while (valueIdx < values.length) {
-      let position = 0;
-      while (values[valueIdx].length - position > 0) {
-        const length = Math.min(values[valueIdx].length - position, 255);
-
-        const tlv = Buffer.allocUnsafe(length + 2);
-        tlv.writeUInt8(tag, 0);
-        tlv.writeUInt8(length, 1);
-        values[valueIdx].copy(tlv, 2, position, position + length);
-
-        tlvs.push(tlv);
         position += length;
       }
-
-      if (++valueIdx < values.length) {
-        tlvs.push(Buffer.from([kTLVType_Separator, 0]));
-      }
     }
-  }
 
-  return Buffer.concat(tlvs);
+    return encodedBuffer;
 }
