@@ -235,7 +235,6 @@ export default class PairingProtocol {
    */
   async parsePairSetupM2(m2Buffer: Buffer): Promise<TLV> {
     const tlv = decodeBuffer(m2Buffer);
-    console.log(tlv.toString());
 
     if (!tlv || tlv.size === 0) {
       throw new Error('M2: Empty TLV');
