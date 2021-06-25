@@ -762,7 +762,7 @@ export default class PairingProtocol {
    * @param {string} identifier - Identifier of the controller to remove
    * @returns {Promise} Promise which resolves to a Buffer.
    */
-  async buildRemovePairingM1(identifier: string): Promise<Buffer> {
+  async buildRemovePairingM1(identifier: Buffer): Promise<Buffer> {
     const data = new Map();
     data.set(Types.kTLVType_State, Buffer.from([Steps.M1]));
     data.set(Types.kTLVType_Method, Buffer.from([Methods.RemovePairing]));

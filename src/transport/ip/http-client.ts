@@ -169,10 +169,14 @@ export default class HttpClient extends EventEmitter {
    * @param {string} identifier - Identifier of the controller to remove
    * @returns {Promise} Promise which resolves when the process completes.
    */
-  async removePairing(identifier: string): Promise<void> {
+  async removePairing(identifier: string | Buffer): Promise<void> {
     const connection = new HttpConnection(this.address, this.port);
     const keys = await this._pairVerify(connection);
     connection.setSessionKeys(keys);
+
+    if (typeof identifier === 'string') {
+      identifier = PairingProtocol.bufferFromHex(identifier);
+    }
 
     // M1
     const m1 = await this.pairingProtocol.buildRemovePairingM1(identifier);
