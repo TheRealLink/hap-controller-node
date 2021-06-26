@@ -104,18 +104,20 @@ export default class HttpEventParser extends EventEmitter {
               this._reset();
             }
           } else if (typeof this.headers['content-type'] !== 'undefined') {
-            const prefix = `0${HEADER_SUFFIX}`;
-            if (this._pending.indexOf(
-              prefix,
-              this._pending.length - prefix.length
-            ) !== -1) {
-              this.body = Buffer.from(this._pending);
+            const prefix = '}\r\n';
+            let endIndex = this._pending.indexOf(prefix);
+            if (endIndex !== -1 || this._pending.indexOf(HEADER_SUFFIX) !== -1) {
+              this.body = Buffer.concat([this.body, this._pending.slice(0, endIndex)]);
               const firstPosition = this.body.indexOf('{');
               const lastPosition = this.body.lastIndexOf('}');
-              this.body = this.body.slice(
-                firstPosition,
-                lastPosition - firstPosition + 1
-              );
+
+              if (lastPosition === -1) {
+                this._pending = Buffer.alloc(0);
+                this._reset();
+                return;
+              }
+
+              this.body = this.body.slice(firstPosition, lastPosition - firstPosition + 1);
               this._pending = this._pending.slice(this.body.length, this._pending.length);
               if (this.body.length > 0 && this.protocol === 'EVENT') {
                 this.emit('event', this.body);
