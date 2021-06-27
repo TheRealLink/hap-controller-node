@@ -303,6 +303,28 @@ export default class HttpClient extends EventEmitter {
     return JSON.parse(response.body.toString());
   }
 
+  async getImage(accessory: number, width: number, height: number) {
+    const connection = new HttpConnection(this.address, this.port);
+    const data = {
+        "aid": accessory,
+        "resource-type": "image",
+        "image-width": width,
+        "image-height": height,
+    };
+
+    const keys = await this._pairVerify(connection);
+    connection.setSessionKeys(keys);
+
+    const response = await connection.post('/resource', Buffer.from(JSON.stringify(data)));
+    connection.close();
+
+    if (response.statusCode !== 200) {
+      throw new Error(`Set failed with status ${response.statusCode}`);
+    }
+
+    return response.body;
+  }
+
   /**
    * Modify a set of characteristics.
    *
