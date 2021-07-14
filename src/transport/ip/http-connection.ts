@@ -80,30 +80,35 @@ export default class HttpConnection extends EventEmitter {
     }
 
     return new Promise<void>((resolve, reject) => {
-      this.state = State.CLOSED;
-      this.socket = net.createConnection(this.port, this.address);
-      this.socket!.setKeepAlive(true);
-
-      this.socket!.on('close', () => {
-        this.socket = null;
+      try {
         this.state = State.CLOSED;
-        this.emit('disconnect', {});
-      });
-      this.socket!.on('end', () => {
-        this.state = State.CLOSING;
-        this.socket?.end();
-      });
-      this.socket!.on('timeout', () => {
-        this.state = State.CLOSING;
-        this.socket?.end();
-      });
-      this.socket!.on('error', () => {
-        reject();
-      });
-      this.socket!.on('connect', () => {
-        this.state = State.READY;
-        resolve();
-      });
+        this.socket = net.createConnection(this.port, this.address);
+        this.socket!.setKeepAlive(true);
+
+        this.socket!.on('close', () => {
+          this.socket = null;
+          this.state = State.CLOSED;
+          this.emit('disconnect', {});
+        });
+        this.socket!.on('end', () => {
+          this.state = State.CLOSING;
+          this.socket?.end();
+        });
+        this.socket!.on('timeout', () => {
+          this.state = State.CLOSING;
+          this.socket?.end();
+        });
+        this.socket!.on('error', (error) => {
+          reject(error);
+        });
+        this.socket!.on('connect', () => {
+          this.state = State.READY;
+          resolve();
+        });
+      }
+      catch(error) {
+        reject(error);
+      }
     });
   }
 
@@ -274,67 +279,72 @@ export default class HttpConnection extends EventEmitter {
     await sodium.ready;
     await this._open();
 
-    return new Promise((resolve) => {
-      const oldListeners = <((...args: any[]) => void)[]>this.socket!.listeners('data');
-      this.socket!.removeAllListeners('data');
+    return new Promise((resolve, reject) => {
+      try {
+        const oldListeners = <((...args: any[]) => void)[]>this.socket!.listeners('data');
+        this.socket!.removeAllListeners('data');
 
-      this.socket!.write(this._encryptData(data));
+        this.socket!.write(this._encryptData(data));
 
-      let message = Buffer.alloc(0);
+        let message = Buffer.alloc(0);
 
-      // eslint-disable-next-line prefer-const
-      let parser: HTTPParser | HttpEventParser;
+        // eslint-disable-next-line prefer-const
+        let parser: HTTPParser | HttpEventParser;
 
-      const bodyParser = (chunk: Buffer): void => {
-        message = Buffer.concat([message, chunk]);
-        while (message.length >= 18) {
-          const frameLength = message.readUInt16LE(0);
-          if (message.length < frameLength + 18) {
-            return;
+        const bodyParser = (chunk: Buffer): void => {
+          message = Buffer.concat([message, chunk]);
+          while (message.length >= 18) {
+            const frameLength = message.readUInt16LE(0);
+            if (message.length < frameLength + 18) {
+              return;
+            }
+
+            const aad = message.slice(0, 2);
+            const data = message.slice(2, 18 + frameLength);
+            const readNonce = Buffer.alloc(12);
+            readNonce.writeUInt32LE(this.a2cCounter, 4);
+
+            try {
+              const decryptedData = Buffer.from(
+                sodium.crypto_aead_chacha20poly1305_ietf_decrypt(
+                  null,
+                  data,
+                  aad,
+                  readNonce,
+                  this.sessionKeys!.AccessoryToControllerKey
+                )
+              );
+
+              message = message.slice(18 + frameLength, message.length);
+              ++this.a2cCounter;
+              parser.execute(decryptedData);
+            } catch (e) {
+              // pass
+            }
+          }
+        };
+
+        parser = this._buildHttpResponseParser((response) => {
+          this.socket!.removeListener('data', bodyParser);
+
+          for (const l of oldListeners) {
+            this.socket!.on('data', l);
           }
 
-          const aad = message.slice(0, 2);
-          const data = message.slice(2, 18 + frameLength);
-          const readNonce = Buffer.alloc(12);
-          readNonce.writeUInt32LE(this.a2cCounter, 4);
-
-          try {
-            const decryptedData = Buffer.from(
-              sodium.crypto_aead_chacha20poly1305_ietf_decrypt(
-                null,
-                data,
-                aad,
-                readNonce,
-                this.sessionKeys!.AccessoryToControllerKey
-              )
-            );
-
-            message = message.slice(18 + frameLength, message.length);
-            ++this.a2cCounter;
-            parser.execute(decryptedData);
-          } catch (e) {
-            // pass
+          if (readEvents) {
+            parser = new HttpEventParser();
+            parser.on('event', (ev) => this.emit('event', ev));
+            this.socket!.on('data', bodyParser);
           }
-        }
-      };
 
-      parser = this._buildHttpResponseParser((response) => {
-        this.socket!.removeListener('data', bodyParser);
+          resolve(response);
+        });
 
-        for (const l of oldListeners) {
-          this.socket!.on('data', l);
-        }
-
-        if (readEvents) {
-          parser = new HttpEventParser();
-          parser.on('event', (ev) => this.emit('event', ev));
-          this.socket!.on('data', bodyParser);
-        }
-
-        resolve(response);
-      });
-
-      this.socket!.on('data', bodyParser);
+        this.socket!.on('data', bodyParser);
+      }
+      catch(error) {
+        reject(error);
+      }
     });
   }
 
@@ -350,36 +360,41 @@ export default class HttpConnection extends EventEmitter {
   private async _requestClear(data: Buffer, readEvents = false): Promise<HttpResponse> {
     await this._open();
 
-    return new Promise((resolve) => {
-      const oldListeners = <((...args: any[]) => void)[]>this.socket!.listeners('data');
-      this.socket!.removeAllListeners('data');
+    return new Promise((resolve, reject) => {
+      try {
+        const oldListeners = <((...args: any[]) => void)[]>this.socket!.listeners('data');
+        this.socket!.removeAllListeners('data');
 
-      this.socket!.write(data);
+        this.socket!.write(data);
 
-      // eslint-disable-next-line prefer-const
-      let parser: HTTPParser | HttpEventParser;
+        // eslint-disable-next-line prefer-const
+        let parser: HTTPParser | HttpEventParser;
 
-      const bodyParser = (chunk: Buffer): void => {
-        parser.execute(chunk);
-      };
+        const bodyParser = (chunk: Buffer): void => {
+          parser.execute(chunk);
+        };
 
-      parser = this._buildHttpResponseParser((response) => {
-        this.socket!.removeListener('data', bodyParser);
+        parser = this._buildHttpResponseParser((response) => {
+          this.socket!.removeListener('data', bodyParser);
 
-        for (const l of oldListeners) {
-          this.socket!.on('data', l);
-        }
+          for (const l of oldListeners) {
+            this.socket!.on('data', l);
+          }
 
-        if (readEvents) {
-          parser = new HttpEventParser();
-          parser.on('event', (ev) => this.emit('event', ev));
-          this.socket!.on('data', bodyParser);
-        }
+          if (readEvents) {
+            parser = new HttpEventParser();
+            parser.on('event', (ev) => this.emit('event', ev));
+            this.socket!.on('data', bodyParser);
+          }
 
-        resolve(response);
-      });
+          resolve(response);
+        });
 
-      this.socket!.on('data', bodyParser);
+        this.socket!.on('data', bodyParser);
+      }
+      catch(error) {
+        reject(error);
+      }
     });
   }
 
